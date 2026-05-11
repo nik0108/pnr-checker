@@ -23,38 +23,62 @@ async function checkPRNStatus() {
   try {
     console.log(`[${new Date().toLocaleString()}] Checking PNR: ${PNR_NUMBER}`);
     
-    // Using free Indian Rail API (no signup needed!)
-    const url = `https://indianrailapi.com/api/pnrstatus/pnr/${PNR_NUMBER}/`;
+    // Using free ConfirmTkt API (no API key needed!)
+    const url = `https://api.confirmtkt.com/api/pnr/getPNRStatus/${PNR_NUMBER}/`;
     
-    const response = await axios.get(url);
-    const data = response.data.data || response.data;
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
     
-    if (response.data.status === 'OK' || response.data.status === true) {
-      const passengers = data.passenger || [];
+    const data = response.data;
+    
+    // Check if PNR status is valid
+    if (data.PnrNumber && data.Pnr) {
+      const passengers = data.PassengerStatus ? 
+        (Array.isArray(data.PassengerStatus) ? data.PassengerStatus : [data.PassengerStatus]) 
+        : [];
+      
       return {
         success: true,
-        pnr: data.pnr_number || PNR_NUMBER,
-        trainNumber: data.train_number || 'N/A',
-        trainName: data.train_name || 'N/A',
-        from: data.from?.name || data.from || 'N/A',
-        to: data.to?.name || data.to || 'N/A',
+        pnr: data.Pnr || PNR_NUMBER,
+        trainNumber: data.TrainNo || 'N/A',
+        trainName: data.TrainName || 'N/A',
+        from: data.From || 'N/A',
+        to: data.To || 'N/A',
         passengers: passengers,
-        chartStatus: data.chart_prepared || 'Not Prepared',
-        class: data.class || 'N/A',
-        travelDate: data.travel_date || 'N/A'
+        chartStatus: data.ChartPrepared ? 'YES' : 'NO',
+        class: data.JourneyClass || 'N/A',
+        travelDate: data.JourneyDate || 'N/A',
+        boardingPoint: data.BoardingPoint || 'N/A',
+        reservationUpto: data.ReservationUpto || 'N/A'
       };
     } else {
       return {
         success: false,
-        error: response.data.error || 'Unable to fetch PNR status'
+        error: data.Error || 'PNR not found or invalid'
       };
     }
   } catch (error) {
     console.error('❌ PNR Check Error:', error.message);
-    return {
-      success: false,
-      error: error.message
-    };
+    
+    // Try fallback API
+    try {
+      console.log('Trying fallback API...');
+      const fallbackUrl = `https://confirmtkt.com/pnr/${PNR_NUMBER}`;
+      await axios.get(fallbackUrl);
+      
+      return {
+        success: false,
+        error: 'PNR data temporarily unavailable. Try again in 5 minutes.'
+      };
+    } catch (fallbackError) {
+      return {
+        success: false,
+        error: 'Unable to fetch PNR status. Check your PNR number and try again.'
+      };
+    }
   }
 }
 
@@ -63,15 +87,24 @@ async function checkPRNStatus() {
 // ============================================
 function formatStatusMessage(data) {
   if (!data.success) {
-    return `❌ Error checking PNR\nError: ${data.error}\n\nTry checking manually: https://www.irctc.co.in/nget/train/pnrstatus`;
+    return `❌ Error checking PNR\n${data.error}\n\nTry checking manually:\nhttps://www.confirmtkt.com/pnr/${PNR_NUMBER}`;
   }
 
   let passengerList = '';
   if (data.passengers && data.passengers.length > 0) {
-    data.passengers.forEach((p, idx) => {
-      const status = p.status || p.booking_status || 'Unknown';
-      passengerList += `\n${idx + 1}. ${p.passenger_name || `Passenger ${idx + 1}`} - ${status}`;
-    });
+    if (typeof data.passengers[0] === 'string') {
+      // Passengers is a string or array of strings
+      data.passengers.forEach((p, idx) => {
+        passengerList += `\n${idx + 1}. ${p}`;
+      });
+    } else {
+      // Passengers is an object or array of objects
+      data.passengers.forEach((p, idx) => {
+        const status = p.CurrentStatus || p.status || 'Unknown';
+        const name = p.Passenger || p.PassengerName || `Passenger ${idx + 1}`;
+        passengerList += `\n${idx + 1}. ${name} - ${status}`;
+      });
+    }
   } else {
     passengerList = '\nNo passenger details available';
   }
@@ -82,6 +115,7 @@ function formatStatusMessage(data) {
     `*Route:* ${data.from} → ${data.to}\n` +
     `*Class:* ${data.class}\n` +
     `*Travel Date:* ${data.travelDate}\n` +
+    `*Boarding Point:* ${data.boardingPoint}\n` +
     `*Chart Status:* ${data.chartStatus}\n` +
     `\n*Passengers:*${passengerList}`;
 }
