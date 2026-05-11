@@ -1,0 +1,22 @@
+{
+  "name": "pnr-status-checker",
+  "version": "1.0.0",
+  "description": "Check train PNR status and send Telegram notifications",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "node-cron": "^3.0.2",
+    "node-telegram-bot-api": "^0.61.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": "18.0.0"
+  }
+}
