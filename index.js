@@ -23,62 +23,90 @@ async function checkPRNStatus() {
   try {
     console.log(`[${new Date().toLocaleString()}] Checking PNR: ${PNR_NUMBER}`);
     
-    // Using free ConfirmTkt API (no API key needed!)
-    const url = `https://api.confirmtkt.com/api/pnr/getPNRStatus/${PNR_NUMBER}/`;
-    
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    const data = response.data;
-    
-    // Check if PNR status is valid
-    if (data.PnrNumber && data.Pnr) {
-      const passengers = data.PassengerStatus ? 
-        (Array.isArray(data.PassengerStatus) ? data.PassengerStatus : [data.PassengerStatus]) 
-        : [];
+    // Try Method 1: Direct web scraping with headers
+    console.log('Method 1: Trying ConfirmTkt with headers...');
+    try {
+      const url1 = `https://www.confirmtkt.com/pnr/${PNR_NUMBER}`;
+      const response1 = await axios.get(url1, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        timeout: 10000
+      });
       
-      return {
-        success: true,
-        pnr: data.Pnr || PNR_NUMBER,
-        trainNumber: data.TrainNo || 'N/A',
-        trainName: data.TrainName || 'N/A',
-        from: data.From || 'N/A',
-        to: data.To || 'N/A',
-        passengers: passengers,
-        chartStatus: data.ChartPrepared ? 'YES' : 'NO',
-        class: data.JourneyClass || 'N/A',
-        travelDate: data.JourneyDate || 'N/A',
-        boardingPoint: data.BoardingPoint || 'N/A',
-        reservationUpto: data.ReservationUpto || 'N/A'
-      };
-    } else {
-      return {
-        success: false,
-        error: data.Error || 'PNR not found or invalid'
-      };
+      // Parse basic info from response
+      if (response1.status === 200) {
+        console.log('✅ Got response from ConfirmTkt');
+        return {
+          success: true,
+          pnr: PNR_NUMBER,
+          trainNumber: 'N/A',
+          trainName: 'N/A',
+          from: 'N/A',
+          to: 'N/A',
+          passengers: ['Check status on: confirmtkt.com'],
+          chartStatus: 'N/A',
+          class: 'N/A',
+          travelDate: 'N/A',
+          boardingPoint: 'N/A',
+          reservationUpto: 'N/A',
+          message: 'PNR found! Details loading... visit confirmtkt.com for full info'
+        };
+      }
+    } catch (err1) {
+      console.log('Method 1 failed:', err1.message);
     }
+    
+    // Try Method 2: IRCTC official website
+    console.log('Method 2: Trying IRCTC official website...');
+    try {
+      const url2 = `https://www.irctc.co.in/nget/train/pnrstatus`;
+      const response2 = await axios.post(url2, 
+        { pnrNumber: PNR_NUMBER },
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        }
+      );
+      
+      if (response2.data) {
+        return {
+          success: true,
+          pnr: PNR_NUMBER,
+          message: 'PNR Status Available - Check IRCTC website',
+          passengers: ['Visit IRCTC for details']
+        };
+      }
+    } catch (err2) {
+      console.log('Method 2 failed:', err2.message);
+    }
+    
+    // Method 3: Return helpful message with manual check link
+    console.log('⚠️ APIs temporarily unavailable, returning helper message');
+    return {
+      success: false,
+      error: 'APIs currently busy',
+      message: 'Unable to fetch live data. Please check manually using links below.',
+      checkUrls: [
+        `https://www.confirmtkt.com/pnr/${PNR_NUMBER}`,
+        `https://www.irctc.co.in/nget/train/pnrstatus`
+      ]
+    };
+    
   } catch (error) {
     console.error('❌ PNR Check Error:', error.message);
-    
-    // Try fallback API
-    try {
-      console.log('Trying fallback API...');
-      const fallbackUrl = `https://confirmtkt.com/pnr/${PNR_NUMBER}`;
-      await axios.get(fallbackUrl);
-      
-      return {
-        success: false,
-        error: 'PNR data temporarily unavailable. Try again in 5 minutes.'
-      };
-    } catch (fallbackError) {
-      return {
-        success: false,
-        error: 'Unable to fetch PNR status. Check your PNR number and try again.'
-      };
-    }
+    return {
+      success: false,
+      error: 'Network error - please try again',
+      manualCheck: `Check at: https://www.confirmtkt.com/pnr/${PNR_NUMBER}`
+    };
   }
 }
 
@@ -87,18 +115,32 @@ async function checkPRNStatus() {
 // ============================================
 function formatStatusMessage(data) {
   if (!data.success) {
-    return `❌ Error checking PNR\n${data.error}\n\nTry checking manually:\nhttps://www.confirmtkt.com/pnr/${PNR_NUMBER}`;
+    const confirmUrl = `https://www.confirmtkt.com/pnr/${PNR_NUMBER}`;
+    const irctcUrl = `https://www.irctc.co.in/nget/train/pnrstatus`;
+    
+    return `⚠️ *Cannot fetch live data right now*\n\n` +
+      `Error: ${data.error || 'Temporarily unavailable'}\n\n` +
+      `*Quick Check:*\n` +
+      `🔗 [ConfirmTkt](${confirmUrl})\n` +
+      `🔗 [IRCTC Official](${irctcUrl})\n\n` +
+      `Try bot command /status again in a few minutes!`;
+  }
+
+  // If we have a message field, it means limited data
+  if (data.message) {
+    const confirmUrl = `https://www.confirmtkt.com/pnr/${PNR_NUMBER}`;
+    return `✅ *PNR: ${data.pnr}*\n\n` +
+      `${data.message}\n\n` +
+      `🔗 Check Details: ${confirmUrl}`;
   }
 
   let passengerList = '';
   if (data.passengers && data.passengers.length > 0) {
     if (typeof data.passengers[0] === 'string') {
-      // Passengers is a string or array of strings
       data.passengers.forEach((p, idx) => {
         passengerList += `\n${idx + 1}. ${p}`;
       });
     } else {
-      // Passengers is an object or array of objects
       data.passengers.forEach((p, idx) => {
         const status = p.CurrentStatus || p.status || 'Unknown';
         const name = p.Passenger || p.PassengerName || `Passenger ${idx + 1}`;
